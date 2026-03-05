@@ -109,7 +109,7 @@ if pdf_file is not None:
 
             # --- STEP 2: PATHS ---
             st.divider()
-            st.subheader("2. Copy with Ctrl + Shift + C and paste paths then press Ctrl + Enter" to get the results)
+            st.subheader("2. Copy with Ctrl + Shift + C and paste paths then press Ctrl + Enter to get the results")
             path_input = st.text_area("Paste the list of paths here (one per line):", height=150)
 
             # --- PROCESSING ---
@@ -143,4 +143,5 @@ if pdf_file is not None:
     except Exception as e:
 
         st.error(f"Error: {e}")
+
 
