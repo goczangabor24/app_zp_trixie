@@ -69,7 +69,7 @@ def extract_path_info(path):
         if num_m: 
             mo = num_m.group(1)
             
-    return f"{loc} {mo} {yr}"
+    return f"{loc} {mo}-{yr}"
 
 # --- STEP 1: UPLOAD ---
 st.subheader("1. Upload PDF")
@@ -143,5 +143,6 @@ if pdf_file is not None:
     except Exception as e:
 
         st.error(f"Error: {e}")
+
 
 
