@@ -10,7 +10,6 @@ st.title("🐶 Zooplus - Trixie Entry Certificates")
 
 # Helper function for JS Copy Button
 def copy_button(label, text_to_copy):
-    # This creates a small button that uses browser JS to copy text
     button_uuid = re.sub(r'\W+', '', label)
     custom_js = f"""
         <button id="{button_uuid}" style="
@@ -27,7 +26,8 @@ def copy_button(label, text_to_copy):
         document.getElementById("{button_uuid}").addEventListener("click", function() {{
             const text = `{text_to_copy}`;
             navigator.clipboard.writeText(text).then(function() {{
-                alert('Copied to clipboard!');
+                // Az alert sort töröltük, így nincs felugró ablak
+                console.log('Copied!'); 
             }}, function(err) {{
                 console.error('Could not copy text: ', err);
             }});
@@ -141,4 +141,5 @@ if pdf_file is not None:
         else:
             st.warning("No PO numbers matching criteria were found in the PDF.")
     except Exception as e:
+
         st.error(f"Error: {e}")
