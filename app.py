@@ -5,6 +5,8 @@ import re
 import pandas as pd
 import streamlit.components.v1 as components
 import io
+from datetime import datetime
+from pathlib import Path
 
 # 1. Setup
 st.set_page_config(page_title="Zooplus - Trixie Entry Certificates", layout="wide")
@@ -127,21 +129,16 @@ def style_results_table(df_display):
     return df_display.style.apply(highlight_missing, axis=1)
 
 
-def add_labels_to_pdf(pdf_bytes, results):
+def add_po_labels_to_pdf(doc, results):
     """
-    Megkeresi az egyes PO számokat a PDF-ben, és a TO_COPY értéket
-    a lap jobb széléhez igazítva írja be fix oszlopba.
-    Missing esetén kihagyja.
+    PO sorokhoz hozzáírja a WAREHOUSE MM-YYYY értéket
+    a lap jobb széléhez igazítva.
     """
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-
     inserted_count = 0
     not_found = []
 
     font_size = 11
     y_offset = -3
-
-    # Jobb margó: ettől a távolságtól beljebb legyen a szöveg jobb széle
     right_margin = 85
 
     po_map = {
@@ -159,10 +156,7 @@ def add_labels_to_pdf(pdf_bytes, results):
             if rects:
                 r = rects[0]
 
-                # Szöveg szélességének becslése
                 text_width = fitz.get_text_length(label, fontname="helv", fontsize=font_size)
-
-                # Fix oszlop a lap jobb széléhez igazítva
                 x = page.rect.x1 - right_margin - text_width
                 y = r.y1 + y_offset
 
@@ -190,10 +184,86 @@ def add_labels_to_pdf(pdf_bytes, results):
         if not found_any:
             not_found.append(po)
 
+    return inserted_count, not_found
+
+
+def add_date_and_signature(doc, signature_image_path):
+    """
+    1) Ausstellungsdatum alá: Wien, aktuális dátum
+    2) Unterschrift... részhez: Tina Horn + aláíráskép
+    """
+    today_str = datetime.now().strftime("%d.%m.%Y")
+    date_text = f"Wien, {today_str}"
+
+    date_hits = 0
+    sign_hits = 0
+
+    for page in doc:
+        # --- Ausstellungsdatum keresése ---
+        date_rects = page.search_for("Ausstellungsdatum")
+        if date_rects:
+            r = date_rects[0]
+
+            # a címke alatti vonal környékére írjuk
+            x = r.x0
+            y = r.y1 + 18
+
+            text_width = fitz.get_text_length(date_text, fontname="helv", fontsize=11)
+            bg_rect = fitz.Rect(x - 1, y - 12, x + text_width + 2, y + 3)
+            page.draw_rect(bg_rect, color=None, fill=(1, 1, 1))
+            page.insert_text(
+                (x, y),
+                date_text,
+                fontsize=11,
+                fontname="helv",
+                color=(0, 0, 0)
+            )
+            date_hits += 1
+
+        # --- Unterschrift... keresése ---
+        sign_rects = page.search_for("Unterschrift des Abnehmers")
+        if sign_rects:
+            r = sign_rects[0]
+
+            # az aláírási vonal jellemzően a hosszú szöveg FELETT van,
+            # ezért kicsit fölé tesszük a nevet és a képet
+            name_x = r.x0 + 5
+            name_y = r.y0 - 22
+
+            # név
+            page.insert_text(
+                (name_x, name_y),
+                "Tina Horn",
+                fontsize=11,
+                fontname="helv",
+                color=(0, 0, 0)
+            )
+
+            # aláíráskép
+            if signature_image_path and Path(signature_image_path).exists():
+                img_rect = fitz.Rect(
+                    name_x + 70,   # a név után jobbra
+                    r.y0 - 42,     # kicsit magasabban induljon
+                    name_x + 170,
+                    r.y0 - 5
+                )
+                page.insert_image(img_rect, filename=signature_image_path)
+
+            sign_hits += 1
+
+    return date_hits, sign_hits
+
+
+def create_modified_pdf(pdf_bytes, results, signature_image_path):
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+
+    inserted_count, not_found = add_po_labels_to_pdf(doc, results)
+    date_hits, sign_hits = add_date_and_signature(doc, signature_image_path)
+
     output_bytes = doc.tobytes()
     doc.close()
 
-    return output_bytes, inserted_count, not_found
+    return output_bytes, inserted_count, not_found, date_hits, sign_hits
 
 
 # --- STEP 1: UPLOAD ---
@@ -203,7 +273,6 @@ pdf_file = st.file_uploader("Upload PDF to extract PO numbers", type=["pdf"])
 if pdf_file is not None:
     try:
         pdf_bytes = pdf_file.read()
-
         pos = extract_po_numbers_from_pdf(pdf_bytes)
 
         if pos:
@@ -222,7 +291,6 @@ if pdf_file is not None:
                 st.text_area("English Windows:", value=or_text, height=100)
                 copy_button("English String", or_text)
 
-            # --- STEP 2: PATHS ---
             st.divider()
             st.subheader("2. Copy with Ctrl + Shift + C and paste paths then press Ctrl + Enter to get the results")
             path_input = st.text_area("Paste the list of paths here (one per line):", height=150)
@@ -236,7 +304,6 @@ if pdf_file is not None:
 
             results = build_results(pos, clean_p)
 
-            # --- RESULTS ---
             st.subheader("📋 Final Results")
             df = pd.DataFrame(results)
             df_display = df[["PO Number", "TO_COPY"]].copy()
@@ -255,17 +322,21 @@ if pdf_file is not None:
                 mime="text/csv"
             )
 
-            # --- PDF WRITING SECTION ---
             st.divider()
             st.subheader("3. Generate annotated PDF")
 
+            # Ezt a képet tedd a repo-ba is ugyanezen a néven, ha cloudon futtatod
+            signature_image_path = "/mnt/data/Unterschrift Tina Horn.png"
+
             if st.button("✍️ Create modified PDF"):
-                modified_pdf_bytes, inserted_count, not_found = add_labels_to_pdf(
+                modified_pdf_bytes, inserted_count, not_found, date_hits, sign_hits = create_modified_pdf(
                     pdf_bytes,
-                    results
+                    results,
+                    signature_image_path
                 )
 
-                st.success(f"Done. Inserted {inserted_count} labels into the PDF.")
+                st.success(f"Done. Inserted {inserted_count} warehouse labels into the PDF.")
+                st.info(f"Date fields filled: {date_hits} | Signature fields filled: {sign_hits}")
 
                 if not_found:
                     st.warning("These PO numbers were not found in the PDF search step:")
