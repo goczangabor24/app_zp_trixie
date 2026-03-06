@@ -230,29 +230,6 @@ def add_date_and_signature(doc, signature_image_path):
             name_x = r.x0 + 5
             name_y = r.y0 - 22
 
-            # név
-            page.insert_text(
-                (name_x, name_y),
-                "Tina Horn",
-                fontsize=11,
-                fontname="helv",
-                color=(0, 0, 0)
-            )
-
-            # aláíráskép
-            if signature_image_path and Path(signature_image_path).exists():
-                img_rect = fitz.Rect(
-                    name_x + 70,   # a név után jobbra
-                    r.y0 - 42,     # kicsit magasabban induljon
-                    name_x + 170,
-                    r.y0 - 5
-                )
-                page.insert_image(img_rect, filename=signature_image_path)
-
-            sign_hits += 1
-
-    return date_hits, sign_hits
-
 
 def create_modified_pdf(pdf_bytes, results, signature_image_path):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -355,3 +332,4 @@ if pdf_file is not None:
 
     except Exception as e:
         st.error(f"Error: {e}")
+
