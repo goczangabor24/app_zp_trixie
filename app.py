@@ -129,7 +129,9 @@ def style_results_table(df_display):
 
 def add_labels_to_pdf(pdf_bytes, results):
     """
-    Megkeresi az egyes PO számokat a PDF-ben, és a találat jobb oldalára beszúrja a TO_COPY értéket.
+    Megkeresi az egyes PO számokat a PDF-ben, és fix oszlopba beszúrja a TO_COPY értéket.
+    A fix oszlop a PO SZÖVEG ELEJÉTŐL számított 230 pont.
+    Így minden kód egymás alatt lesz, és ott marad, ahol a 7 számjegyű PO-k után most vannak.
     Missing esetén kihagyja.
     """
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -141,7 +143,6 @@ def add_labels_to_pdf(pdf_bytes, results):
     y_offset = -3
     font_size = 11
 
-    # PO -> info map, Missing kihagyása
     po_map = {
         str(row["PO Number"]): str(row["TO_COPY"])
         for row in results
@@ -157,7 +158,8 @@ def add_labels_to_pdf(pdf_bytes, results):
             if rects:
                 r = rects[0]
 
-                x = r.x1 + x_offset
+                # FIX oszlop a PO elejéhez képest
+                x = r.x0 + x_offset
                 y = r.y1 + y_offset
 
                 text_width = max(70, len(label) * font_size * 0.60)
@@ -229,8 +231,6 @@ if pdf_file is not None:
             # --- RESULTS ---
             st.subheader("📋 Final Results")
             df = pd.DataFrame(results)
-
-            # Csak ez a két oszlop jelenjen meg
             df_display = df[["PO Number", "TO_COPY"]].copy()
 
             st.dataframe(
