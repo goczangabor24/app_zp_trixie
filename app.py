@@ -118,17 +118,35 @@ def build_results(pos, clean_paths):
     return results
 
 
-def add_labels_to_pdf(pdf_bytes, results, x_offset=10, font_size=8):
+def style_results_table(df_display):
+    def highlight_missing(row):
+        if str(row["TO_COPY"]).strip().lower() == "missing":
+            return ["background-color: #d32f2f; color: white;" for _ in row]
+        return ["" for _ in row]
+
+    return df_display.style.apply(highlight_missing, axis=1)
+
+
+def add_labels_to_pdf(pdf_bytes, results):
     """
     Megkeresi az egyes PO számokat a PDF-ben, és a találat jobb oldalára beszúrja a TO_COPY értéket.
+    Missing esetén kihagyja.
     """
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 
     inserted_count = 0
     not_found = []
 
-    # PO -> info map
-    po_map = {str(row["PO Number"]): str(row["TO_COPY"]) for row in results if row["TO_COPY"] != "Missing"}
+    x_offset = 230
+    y_offset = -3
+    font_size = 11
+
+    # PO -> info map, Missing kihagyása
+    po_map = {
+        str(row["PO Number"]): str(row["TO_COPY"])
+        for row in results
+        if str(row["TO_COPY"]).strip().lower() != "missing"
+    }
 
     for po, label in po_map.items():
         found_any = False
@@ -137,18 +155,14 @@ def add_labels_to_pdf(pdf_bytes, results, x_offset=10, font_size=8):
             rects = page.search_for(po)
 
             if rects:
-                # Ha egy PO többször szerepel ugyanazon az oldalon,
-                # itt most az első találat mellé írunk.
                 r = rects[0]
 
-                # Jobb oldalra írjuk
                 x = r.x1 + x_offset
-                y = r.y1 - 1
+                y = r.y1 + y_offset
 
-                # Fehér hátterű kis doboz a jobb olvashatóságért
-                text_width = max(45, len(label) * font_size * 0.55)
-                text_height = font_size + 4
-                bg_rect = fitz.Rect(x - 1, r.y0, x + text_width, r.y0 + text_height)
+                text_width = max(70, len(label) * font_size * 0.60)
+                text_height = font_size + 5
+                bg_rect = fitz.Rect(x - 1, r.y0 - 1, x + text_width, r.y0 + text_height)
 
                 page.draw_rect(bg_rect, color=None, fill=(1, 1, 1))
                 page.insert_text(
@@ -215,9 +229,17 @@ if pdf_file is not None:
             # --- RESULTS ---
             st.subheader("📋 Final Results")
             df = pd.DataFrame(results)
-            st.dataframe(df, use_container_width=True, hide_index=True)
 
-            csv = df.to_csv(index=False, sep=';').encode('utf-8-sig')
+            # Csak ez a két oszlop jelenjen meg
+            df_display = df[["PO Number", "TO_COPY"]].copy()
+
+            st.dataframe(
+                style_results_table(df_display),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            csv = df_display.to_csv(index=False, sep=';').encode('utf-8-sig')
             st.download_button(
                 "📥 Download Results CSV",
                 data=csv,
@@ -229,30 +251,10 @@ if pdf_file is not None:
             st.divider()
             st.subheader("3. Generate annotated PDF")
 
-            col1, col2 = st.columns(2)
-            with col1:
-                x_offset = st.number_input(
-                    "Horizontal offset from PO number",
-                    min_value=0,
-                    max_value=300,
-                    value=10,
-                    step=1
-                )
-            with col2:
-                font_size = st.number_input(
-                    "Inserted text font size",
-                    min_value=4,
-                    max_value=20,
-                    value=8,
-                    step=1
-                )
-
             if st.button("✍️ Create modified PDF"):
                 modified_pdf_bytes, inserted_count, not_found = add_labels_to_pdf(
                     pdf_bytes,
-                    results,
-                    x_offset=x_offset,
-                    font_size=font_size
+                    results
                 )
 
                 st.success(f"Done. Inserted {inserted_count} labels into the PDF.")
